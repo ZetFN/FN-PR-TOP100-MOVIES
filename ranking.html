@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Player Cards Generator (High-Res Export)</title>
+    <!-- Tailwind CSSの読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- フォントの読み込み -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            margin: 0;
+            padding: 40px;
+            background-color: #ffffff;
+            overflow: auto; 
+            transition: padding 0.3s ease;
+        }
+
+        #canvas-wrapper {
+            margin: 0 auto;
+            overflow: hidden;
+            transition: width 0.3s ease, height 0.3s ease;
+        }
+
+        .canvas {
+            width: 1920px;
+            height: 1080px;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 38px; 
+            padding-left: 19px;
+            padding-right: 19px;
+            box-sizing: border-box;
+            transform-origin: top left;
+            transition: transform 0.3s ease;
+        }
+
+        .player-card {
+            width: 442px; 
+            height: 1000px;
+            background-color: #555557;
+            border-radius: 12px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #374151; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4B5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6B7280; }
+    </style>
+</head>
+<body>
+
+<!-- メインコントロールパネル (レイアウト崩れ防止のため幅と折り返しを調整) -->
+<div id="control-panel" style="width: 100%; max-width: 1920px; margin: 0 auto 30px auto;" class="bg-gray-800 p-6 rounded-xl border border-gray-600 text-white shadow-lg">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+        <h2 class="text-2xl font-bold whitespace-nowrap">選手選択パネル</h2>
+        <div class="flex flex-wrap gap-4 items-center">
+            <label class="flex items-center gap-2 cursor-pointer bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded shadow transition-colors text-white font-bold select-none whitespace-nowrap">
+                <input type="checkbox" id="auto-fit-toggle" checked class="w-5 h-5 cursor-pointer accent-blue-500">
+                <span>🔎 画面に合わせる</span>
+            </label>
+            <button id="download-png" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-6 rounded shadow transition-colors whitespace-nowrap">
+                💾 画像として保存
+            </button>
+            <button id="open-db-modal" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded shadow transition-colors whitespace-nowrap">
+                ⚙️ 選手データ管理
+            </button>
+            <button id="enable-capture-mode" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded shadow transition-colors whitespace-nowrap">
+                📷 高画質キャプチャ準備
+            </button>
+        </div>
+    </div>
+    <p class="text-sm text-gray-400 mb-4">※【高画質キャプチャ準備】を押すと原寸大になりUIが消えます。その状態でChromeの「検証」からスクリーンショットを撮ると超高画質になります（元に戻すには画面をダブルクリック）。</p>
+    
+    <!-- カラム数を画面幅に応じて自動調整 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="bg-gray-700 p-4 rounded-lg">
+            <h3 class="font-bold text-lg text-[#FF3030] mb-3">SLOT 1 (100pt)</h3>
+            <select id="select-p1" class="w-full p-2 text-black rounded cursor-pointer"></select>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg">
+            <h3 class="font-bold text-lg text-[#FF3030] mb-3">SLOT 2 (99pt)</h3>
+            <select id="select-p2" class="w-full p-2 text-black rounded cursor-pointer"></select>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg">
+            <h3 class="font-bold text-lg text-[#FF3030] mb-3">SLOT 3 (98pt)</h3>
+            <select id="select-p3" class="w-full p-2 text-black rounded cursor-pointer"></select>
+        </div>
+        <div class="bg-gray-700 p-4 rounded-lg">
+            <h3 class="font-bold text-lg text-[#FF3030] mb-3">SLOT 4 (97pt)</h3>
+            <select id="select-p4" class="w-full p-2 text-black rounded cursor-pointer"></select>
+        </div>
+    </div>
+</div>
+
+<!-- データベース管理モーダル -->
+<div id="db-modal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 hidden">
+    <div class="bg-gray-800 border border-gray-600 rounded-xl p-8 w-[950px] max-w-[95%] text-white shadow-2xl flex flex-col max-h-[90vh]">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">⚙️ 選手データベース管理</h2>
+            <button id="close-db-modal" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+        </div>
+        
+        <div class="flex flex-col lg:flex-row gap-8 overflow-hidden h-full">
+            <div class="w-full lg:w-1/2 flex flex-col h-full overflow-y-auto pr-2 custom-scrollbar">
+                <h3 id="form-title" class="font-bold text-lg mb-4 border-b border-gray-600 pb-2">➕ 新規登録</h3>
+                
+                <div class="mb-3">
+                    <label class="block text-sm font-bold mb-1">選手名 <span class="text-xs text-gray-400 font-normal">(Player_Icon内の画像を自動検索)</span></label>
+                    <input type="text" id="reg-name" placeholder="例: Zet" class="w-full p-2 text-black rounded">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="block text-sm font-bold mb-1">チーム名 <span class="text-xs text-gray-400 font-normal">(Team_Icon内の画像を自動検索)</span></label>
+                    <input type="text" id="reg-team" placeholder="例: LYNX" class="w-full p-2 text-black rounded">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="block text-sm font-bold mb-1">X ID</label>
+                    <input type="text" id="reg-xid" placeholder="例: @lynx_zet" class="w-full p-2 text-black rounded">
+                </div>
+                
+                <div class="mb-5 bg-gray-900 p-3 rounded-lg border border-gray-700">
+                    <label class="block text-sm font-bold mb-2">FNCS 実績</label>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="radio" id="type-cs" name="fncs-type" value="cs" checked class="w-4 h-4 cursor-pointer accent-blue-500">
+                        <label for="type-cs" class="cursor-pointer font-bold text-sm mr-1 whitespace-nowrap">シーズン:</label>
+                        <span class="font-bold text-sm">C</span>
+                        <input type="number" id="reg-ch" placeholder="1" class="w-12 p-1 text-black rounded text-center text-sm">
+                        <span class="font-bold text-sm">S</span>
+                        <input type="number" id="reg-se" placeholder="1" class="w-12 p-1 text-black rounded text-center text-sm">
+                        <span class="font-bold text-sm ml-1 whitespace-nowrap">FNCS #</span>
+                        <input type="number" id="reg-rank" placeholder="11" class="w-16 p-1 text-black rounded text-center text-sm">
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <input type="radio" id="type-multi" name="fncs-type" value="multi" class="w-4 h-4 cursor-pointer accent-blue-500">
+                        <label for="type-multi" class="cursor-pointer font-bold text-sm mr-1 whitespace-nowrap">優勝回数:</label>
+                        <span class="font-bold text-sm whitespace-nowrap">FNCS #1 ×</span>
+                        <input type="number" id="reg-multi" placeholder="3" class="w-16 p-1 text-black rounded text-center text-sm">
+                    </div>
+                </div>
+                
+                <div class="mt-auto flex gap-2">
+                    <button id="btn-cancel-edit" class="hidden bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded transition-colors w-1/3">
+                        キャンセル
+                    </button>
+                    <button id="btn-register" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition-colors flex-1">
+                        データベースに登録
+                    </button>
+                </div>
+            </div>
+            
+            <div class="w-full lg:w-1/2 flex flex-col h-full mt-6 lg:mt-0">
+                <h3 class="font-bold text-lg mb-4 border-b border-gray-600 pb-2">📋 登録済み選手</h3>
+                <div id="player-list-container" class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                    <!-- リスト -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="canvas-wrapper">
+    <div class="canvas" id="main-canvas">
+        <!-- カード1 -->
+        <div class="player-card">
+            <div class="text-white text-[72px] font-black leading-none mb-6">100</div>
+            <img id="p1-img" src="" alt="Player" class="w-[362px] h-[362px] object-cover mb-8 mx-auto bg-black" />
+            <div id="p1-name" class="text-white text-[64px] font-bold text-center mb-8 leading-tight">Name</div>
+            <div class="relative flex items-center justify-center w-full mb-8 h-[72px]">
+                <img id="p1-logo" src="" alt="Logo" class="absolute left-0 top-0 w-[72px] h-[72px] bg-white object-cover" />
+                <div id="p1-team" class="text-[#FF3030] text-[48px] font-bold text-center whitespace-nowrap z-10 leading-none">TEAM</div>
+            </div>
+            <div class="flex items-center justify-start w-full mb-auto leading-none mt-12 px-0">
+                <img src="x.png" alt="X Logo" class="w-14 h-14 object-cover" />
+                <div class="ml-2 flex-1">
+                    <div id="p1-xid" class="text-white text-[36px] font-bold text-left whitespace-nowrap z-10 leading-none">@ID</div>
+                </div>
+            </div>
+            <div id="p1-fncs" class="text-white text-[44px] font-bold text-center mt-8 tracking-wider whitespace-nowrap">FNCS</div>
+        </div>
+
+        <!-- カード2 -->
+        <div class="player-card">
+            <div class="text-white text-[72px] font-black leading-none mb-6">99</div>
+            <img id="p2-img" src="" alt="Player" class="w-[362px] h-[362px] object-cover mb-8 mx-auto bg-black" />
+            <div id="p2-name" class="text-white text-[64px] font-bold text-center mb-8 leading-tight">Name</div>
+            <div class="relative flex items-center justify-center w-full mb-8 h-[72px]">
+                <img id="p2-logo" src="" alt="Logo" class="absolute left-0 top-0 w-[72px] h-[72px] bg-white object-cover" />
+                <div id="p2-team" class="text-[#FF3030] text-[48px] font-bold text-center whitespace-nowrap z-10 leading-none">TEAM</div>
+            </div>
+            <div class="flex items-center justify-start w-full mb-auto leading-none mt-12 px-0">
+                <img src="x.png" alt="X Logo" class="w-14 h-14 object-cover" />
+                <div class="ml-2 flex-1">
+                    <div id="p2-xid" class="text-white text-[36px] font-bold text-left whitespace-nowrap z-10 leading-none">@ID</div>
+                </div>
+            </div>
+            <div id="p2-fncs" class="text-white text-[44px] font-bold text-center mt-8 tracking-wider whitespace-nowrap">FNCS</div>
+        </div>
+
+        <!-- カード3 -->
+        <div class="player-card">
+            <div class="text-white text-[72px] font-black leading-none mb-6">98</div>
+            <img id="p3-img" src="" alt="Player" class="w-[362px] h-[362px] object-cover mb-8 mx-auto bg-black" />
+            <div id="p3-name" class="text-white text-[64px] font-bold text-center mb-8 leading-tight">Name</div>
+            <div class="relative flex items-center justify-center w-full mb-8 h-[72px]">
+                <img id="p3-logo" src="" alt="Logo" class="absolute left-0 top-0 w-[72px] h-[72px] bg-white object-cover" />
+                <div id="p3-team" class="text-[#FF3030] text-[48px] font-bold text-center whitespace-nowrap z-10 leading-none">TEAM</div>
+            </div>
+            <div class="flex items-center justify-start w-full mb-auto leading-none mt-12 px-0">
+                <img src="x.png" alt="X Logo" class="w-14 h-14 object-cover" />
+                <div class="ml-2 flex-1">
+                    <div id="p3-xid" class="text-white text-[36px] font-bold text-left whitespace-nowrap z-10 leading-none">@ID</div>
+                </div>
+            </div>
+            <div id="p3-fncs" class="text-white text-[44px] font-bold text-center mt-8 tracking-wider whitespace-nowrap">FNCS</div>
+        </div>
+
+        <!-- カード4 -->
+        <div class="player-card">
+            <div class="text-white text-[72px] font-black leading-none mb-6">97</div>
+            <img id="p4-img" src="" alt="Player" class="w-[362px] h-[362px] object-cover mb-8 mx-auto bg-black" />
+            <div id="p4-name" class="text-white text-[64px] font-bold text-center mb-8 leading-tight">Name</div>
+            <div class="relative flex items-center justify-center w-full mb-8 h-[72px]">
+                <img id="p4-logo" src="" alt="Logo" class="absolute left-0 top-0 w-[72px] h-[72px] bg-white object-cover" />
+                <div id="p4-team" class="text-[#FF3030] text-[48px] font-bold text-center whitespace-nowrap z-10 leading-none">TEAM</div>
+            </div>
+            <div class="flex items-center justify-start w-full mb-auto leading-none mt-12 px-0">
+                <img src="x.png" alt="X Logo" class="w-14 h-14 object-cover" />
+                <div class="ml-2 flex-1">
+                    <div id="p4-xid" class="text-white text-[36px] font-bold text-left whitespace-nowrap z-10 leading-none">@ID</div>
+                </div>
+            </div>
+            <div id="p4-fncs" class="text-white text-[44px] font-bold text-center mt-8 tracking-wider whitespace-nowrap">FNCS</div>
+        </div>
+    </div>
+</div>
+
+<!-- システム管理スクリプト -->
+<script>
+    // データベース管理処理
+    let playerDB = JSON.parse(localStorage.getItem('playerDB_v3'));
+    if (!playerDB) { playerDB = {}; saveDB(); }
+    function saveDB() { localStorage.setItem('playerDB_v3', JSON.stringify(playerDB)); }
+    let editingKey = null;
+
+    function setAutoExtImage(imgElement, basePath) {
+        if (!basePath) { imgElement.src = ""; return; }
+        if (basePath.match(/\.(png|jpg|jpeg|webp)$/i)) {
+            imgElement.onerror = null; imgElement.src = basePath; return;
+        }
+        const extensions = ['.png', '.jpg', '.jpeg', '.webp'];
+        let currentIndex = 0;
+        imgElement.onerror = function() {
+            currentIndex++;
+            if (currentIndex < extensions.length) {
+                imgElement.src = basePath + extensions[currentIndex];
+            } else {
+                imgElement.onerror = null;
+            }
+        };
+        imgElement.onload = function() { imgElement.onerror = null; };
+        imgElement.src = basePath + extensions[0];
+    }
+
+    function populateDropdowns() {
+        const selects = ['select-p1', 'select-p2', 'select-p3', 'select-p4'];
+        const currentValues = selects.map(id => document.getElementById(id).value);
+
+        selects.forEach((selectId, index) => {
+            const selectEl = document.getElementById(selectId);
+            selectEl.innerHTML = '<option value="">-- 選択してください --</option>'; 
+            for (const [key, data] of Object.entries(playerDB)) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `${data.name} (${data.teamName})`;
+                selectEl.appendChild(option);
+            }
+            if (currentValues[index] && playerDB[currentValues[index]]) {
+                selectEl.value = currentValues[index];
+            } else if (Object.keys(playerDB).length > index) {
+                selectEl.value = Object.keys(playerDB)[index];
+            }
+        });
+        updateCard(1, document.getElementById('select-p1').value);
+        updateCard(2, document.getElementById('select-p2').value);
+        updateCard(3, document.getElementById('select-p3').value);
+        updateCard(4, document.getElementById('select-p4').value);
+    }
+
+    function updatePlayerList() {
+        const container = document.getElementById('player-list-container');
+        container.innerHTML = '';
+        if(Object.keys(playerDB).length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-sm">登録されている選手はいません。</p>';
+            return;
+        }
+        for (const [key, data] of Object.entries(playerDB)) {
+            const item = document.createElement('div');
+            item.className = 'flex justify-between items-center bg-gray-700 p-3 rounded';
+            item.innerHTML = `
+                <div>
+                    <div class="font-bold text-sm">${data.name} <span class="text-xs text-gray-400">(${data.teamName})</span></div>
+                    <div class="text-xs text-gray-400">${data.fncs}</div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="editPlayer('${key}')" class="bg-blue-600 hover:bg-blue-500 text-white text-xs py-1 px-3 rounded shadow">編集</button>
+                    <button onclick="deletePlayer('${key}')" class="bg-red-600 hover:bg-red-500 text-white text-xs py-1 px-3 rounded shadow">削除</button>
+                </div>
+            `;
+            container.appendChild(item);
+        }
+    }
+
+    function updateCard(slotNumber, playerKey) {
+        const imgEl = document.getElementById(`p${slotNumber}-img`);
+        const logoEl = document.getElementById(`p${slotNumber}-logo`);
+        const nameEl = document.getElementById(`p${slotNumber}-name`);
+        const teamEl = document.getElementById(`p${slotNumber}-team`);
+        const xidEl = document.getElementById(`p${slotNumber}-xid`);
+        const fncsEl = document.getElementById(`p${slotNumber}-fncs`);
+
+        if (!playerKey || !playerDB[playerKey]) {
+            imgEl.src = ""; nameEl.textContent = "Name"; logoEl.src = "";
+            teamEl.textContent = "TEAM"; xidEl.textContent = "@ID"; fncsEl.textContent = "FNCS";
+            return;
+        }
+        const data = playerDB[playerKey];
+        nameEl.textContent = data.name; teamEl.textContent = data.teamName;
+        xidEl.textContent = data.xId; fncsEl.textContent = data.fncs;
+        setAutoExtImage(imgEl, data.image); setAutoExtImage(logoEl, data.teamLogo);
+    }
+
+    // 登録・編集処理
+    function resetForm() {
+        editingKey = null;
+        document.getElementById('reg-name').value = ''; document.getElementById('reg-team').value = '';
+        document.getElementById('reg-xid').value = ''; document.getElementById('reg-ch').value = '';
+        document.getElementById('reg-se').value = ''; document.getElementById('reg-rank').value = '';
+        document.getElementById('reg-multi').value = ''; document.getElementById('type-cs').checked = true;
+        document.getElementById('form-title').innerHTML = '➕ 新規登録';
+        document.getElementById('btn-register').textContent = 'データベースに登録';
+        document.getElementById('btn-register').classList.replace('bg-green-600', 'bg-blue-600');
+        document.getElementById('btn-register').classList.replace('hover:bg-green-500', 'hover:bg-blue-500');
+        document.getElementById('btn-cancel-edit').classList.add('hidden');
+    }
+
+    window.editPlayer = function(key) {
+        const data = playerDB[key];
+        editingKey = key;
+        document.getElementById('reg-name').value = data.name;
+        document.getElementById('reg-team').value = data.teamName;
+        document.getElementById('reg-xid').value = data.xId;
+        
+        const fncsText = data.fncs;
+        const csMatch = fncsText.match(/C(\d+)S(\d+) FNCS #(\d+)/);
+        const multiMatch = fncsText.match(/FNCS #1×(\d+)/);
+        
+        if (csMatch) {
+            document.getElementById('type-cs').checked = true;
+            document.getElementById('reg-ch').value = csMatch[1];
+            document.getElementById('reg-se').value = csMatch[2];
+            document.getElementById('reg-rank').value = csMatch[3];
+            document.getElementById('reg-multi').value = '';
+        } else if (multiMatch) {
+            document.getElementById('type-multi').checked = true;
+            document.getElementById('reg-multi').value = multiMatch[1];
+            document.getElementById('reg-ch').value = '';
+            document.getElementById('reg-se').value = '';
+            document.getElementById('reg-rank').value = '';
+        }
+        document.getElementById('form-title').innerHTML = '✏️ データ編集';
+        document.getElementById('btn-register').textContent = 'この内容で更新';
+        document.getElementById('btn-register').classList.replace('bg-blue-600', 'bg-green-600');
+        document.getElementById('btn-register').classList.replace('hover:bg-blue-500', 'hover:bg-green-500');
+        document.getElementById('btn-cancel-edit').classList.remove('hidden');
+    };
+
+    document.getElementById('btn-cancel-edit').addEventListener('click', resetForm);
+
+    document.getElementById('btn-register').addEventListener('click', () => {
+        const pName = document.getElementById('reg-name').value.trim();
+        const tName = document.getElementById('reg-team').value.trim();
+        const xid = document.getElementById('reg-xid').value.trim();
+        const fncsType = document.querySelector('input[name="fncs-type"]:checked').value;
+        let finalFncsText = "";
+
+        if (fncsType === 'cs') {
+            const ch = document.getElementById('reg-ch').value.trim();
+            const se = document.getElementById('reg-se').value.trim();
+            const rank = document.getElementById('reg-rank').value.trim();
+            if (!ch || !se || !rank) { alert('シーズン指定の項目をすべて入力してください。'); return; }
+            finalFncsText = `C${ch}S${se} FNCS #${rank}`;
+        } else {
+            const multi = document.getElementById('reg-multi').value.trim();
+            if (!multi) { alert('優勝回数を入力してください。'); return; }
+            finalFncsText = `FNCS #1×${multi}`;
+        }
+
+        if (!pName || !tName || !xid) { alert('選手名、チーム名、X ID は必須です。'); return; }
+
+        const targetKey = editingKey ? editingKey : 'player_' + Date.now();
+        const isEditing = !!editingKey;
+        playerDB[targetKey] = {
+            name: pName, image: "Player_Icon/" + pName, teamName: tName,
+            teamLogo: "Team_Icon/" + tName, xId: xid, fncs: finalFncsText
+        };
+        saveDB(); populateDropdowns(); updatePlayerList(); resetForm();
+        alert(isEditing ? `${pName} 選手のデータを更新しました！` : `${pName} 選手を登録しました！`);
+    });
+
+    window.deletePlayer = function(key) {
+        if (confirm('この選手を削除してもよろしいですか？')) {
+            if (editingKey === key) resetForm();
+            delete playerDB[key]; saveDB(); populateDropdowns(); updatePlayerList();
+        }
+    };
+
+    // リスナー類
+    document.getElementById('select-p1').addEventListener('change', (e) => updateCard(1, e.target.value));
+    document.getElementById('select-p2').addEventListener('change', (e) => updateCard(2, e.target.value));
+    document.getElementById('select-p3').addEventListener('change', (e) => updateCard(3, e.target.value));
+    document.getElementById('select-p4').addEventListener('change', (e) => updateCard(4, e.target.value));
+
+    const dbModal = document.getElementById('db-modal');
+    document.getElementById('open-db-modal').addEventListener('click', () => { updatePlayerList(); dbModal.classList.remove('hidden'); });
+    document.getElementById('close-db-modal').addEventListener('click', () => { dbModal.classList.add('hidden'); resetForm(); });
+
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    const mainCanvas = document.getElementById('main-canvas');
+    const autoFitToggle = document.getElementById('auto-fit-toggle');
+    const controlPanel = document.getElementById('control-panel');
+    let isCaptureMode = false;
+
+    // ★ 高画質化の要: キャプチャモード中は強制的にスケールを1(原寸大)にする
+    function adjustScale() {
+        if (isCaptureMode) {
+            mainCanvas.style.transform = `scale(1)`;
+            canvasWrapper.style.width = `1920px`;
+            canvasWrapper.style.height = `1080px`;
+            return;
+        }
+
+        if (autoFitToggle.checked) {
+            const paddingX = 80; 
+            const paddingY = 250; 
+            const availableWidth = window.innerWidth - paddingX;
+            const availableHeight = window.innerHeight - paddingY;
+            const scale = Math.min(1, availableWidth / 1920, availableHeight / 1080);
+            
+            mainCanvas.style.transform = `scale(${scale})`;
+            canvasWrapper.style.width = `${1920 * scale}px`;
+            canvasWrapper.style.height = `${1080 * scale}px`;
+        } else {
+            mainCanvas.style.transform = `scale(1)`;
+            canvasWrapper.style.width = `1920px`;
+            canvasWrapper.style.height = `1080px`;
+        }
+    }
+
+    window.addEventListener('resize', adjustScale);
+    autoFitToggle.addEventListener('change', adjustScale);
+
+    // ★ 高画質キャプチャ準備モードへ
+    document.getElementById('enable-capture-mode').addEventListener('click', function() {
+        isCaptureMode = true;
+        controlPanel.style.display = 'none';
+        document.body.style.padding = '0';
+        document.body.style.overflow = 'auto'; // 画面外に伸びた分をスクロールできるようにする
+        adjustScale();
+    });
+
+    document.addEventListener('dblclick', function() {
+        if (isCaptureMode) {
+            isCaptureMode = false;
+            controlPanel.style.display = 'block';
+            document.body.style.padding = '40px';
+            document.body.style.overflow = 'auto';
+            adjustScale();
+        }
+    });
+
+    // ★ PNGダウンロードボタン
+    document.getElementById('download-png').addEventListener('click', function() {
+        const targetElement = document.getElementById('main-canvas');
+        const btn = this;
+        const originalText = btn.innerHTML;
+        
+        btn.innerHTML = '⏳ 保存中...';
+        btn.disabled = true;
+
+        // 書き出しのために一時的に原寸大に戻す
+        const currentScale = mainCanvas.style.transform;
+        mainCanvas.style.transform = 'scale(1)';
+
+        // DOMの反映を待ってからキャプチャ処理を開始
+        setTimeout(() => {
+            html2canvas(targetElement, {
+                width: 1920,
+                height: 1080,
+                scale: 1, 
+                backgroundColor: '#1a1a1a',
+                useCORS: true
+            }).then(canvas => {
+                let link = document.createElement('a');
+                link.download = 'player_cards.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                mainCanvas.style.transform = currentScale;
+            }).catch(err => {
+                console.error("画像化エラー:", err);
+                alert("⚠️ セキュリティ制限により自動保存がブロックされました。\n\n【完璧な超高画質PNGを保存する手順】\n1. 「📷 高画質キャプチャ準備」ボタンを押す\n2. 画面上の黒い部分を右クリックして「検証」を押す\n3. Ctrl + Shift + P (Macは Cmd + Shift + P) を押す\n4. 検索窓に「capture node」と入力\n5. 「ノードのスクリーンショットをキャプチャ」をクリック\n\nこの方法なら、100%原寸大(1920x1080)の美しい画像が保存されます！");
+                
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                mainCanvas.style.transform = currentScale;
+            });
+        }, 150);
+    });
+
+    populateDropdowns();
+    adjustScale();
+</script>
+</body>
+</html>
